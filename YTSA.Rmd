@@ -1,0 +1,145 @@
+---
+title: "YouTube Sentiment Analysis"
+author: "Bryan Jenks"
+date: "2021-02-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r Lib_Loading}
+packages <- c("tidyverse"
+              ,"here"
+              ,"todor"
+              ,"tidytext"
+              ,"tokenizers"
+              ,"wordcloud"
+              )
+
+xfun::pkg_attach2(packages, message = FALSE)
+
+```
+
+```{bash Get_Data, eval=FALSE}
+
+# You need to have `youtube-dl` installed add URL to the end of the command
+#   Run this in the terminal, doing it in R is slow
+
+# youtube-dl --sub-lang en --write-auto-sub --sub-format vtt --skip-download https://www.youtube.com/channel/UCfhSB16X9MXhzSFe_H7XbHg
+
+```
+
+```{bash vtt_to_txt, eval=FALSE}
+# You need to have the `vtt_to_txt.py` script in your path
+# then run this in the CLI
+# for file in *;
+#     vtt_to_txt.py $file
+```
+
+```{bash Aggregate_data, eval=FALSE}
+cd data/raw
+cat *.txt > ../clean/aggregate_data.txt
+
+```
+
+```{bash Nuke_It, eval=FALSE}
+# This is to clean up for a new result
+rm -rf data/
+mkdir -p {"data/raw","data/clean"}
+```
+
+```{r parseWordTokens}
+
+parsed_words <- read_file(here("data","clean","aggregate_data.txt")) %>% 
+  tokenize_words(strip_punct = TRUE) %>% 
+  unlist() %>% 
+  as_tibble()
+
+```
+
+```{r removeStopWords}
+
+
+cleaned_words <- parsed_words %>% 
+    anti_join(stop_words, by = c('value' = 'word')) 
+    
+cleaned_words <- cleaned_words[!grepl("^[0-9]+", cleaned_words$value),]
+```
+
+# Text Analysis
+
+## Frequency Distribution
+
+Frequency count of each word's occurrence
+
+```{r wordFrequency}
+
+freq <- cleaned_words %>%
+  count(value, sort = TRUE) 
+
+```
+
+## Sentiment Analysis 
+
+```{r getSentimentLexicon}
+
+sentiments <- get_sentiments("nrc") 
+# 'bing' is better for binary sentiment
+# but 'nrc' produces nicer visuals 🤷
+
+```
+
+```{r sentimentAnalysis}
+
+word_count_sentiments <- cleaned_words %>% 
+    count(value, sort = TRUE) %>% 
+    left_join(sentiments, by = c('value' = 'word')) %>% 
+    filter(!is.na(sentiment)) 
+
+```
+
+# Visualizations
+
+```{r visualizeSentiments}
+
+word_count_sentiments %>% 
+  ggplot() +
+      aes(x = reorder(sentiment, n), fill = sentiment, size = n) +
+      geom_bar() +
+      scale_fill_viridis_d(option = "magma") +
+      labs(x = "Sentiments", 
+           y = "frequency", 
+           title = "Frequency of Sentiment", 
+           subtitle = "using NRC sentiment lexicon") +
+      coord_flip() +
+      theme_minimal() +
+      theme(legend.position = "top")
+
+```
+
+```{r visualizeTopWords}
+
+freq %>%
+  filter(n > 300) %>%
+  mutate(value = reorder(value, n)) %>%
+      ggplot(aes(value, n)) +
+          geom_col() +
+          labs(x = "Count", 
+               y = "frequency", 
+               title = "Frequency of Word Occurance", 
+               subtitle = "Subset of words occurring > 300 times") +
+          xlab(NULL) +
+          coord_flip()
+
+
+```
+
+```{r visualizeWordCloud}
+cloudWords <- freq %>% 
+  filter(n > 200)
+wordcloud::wordcloud(cloudWords$value, cloudWords$n)
+
+
+```
